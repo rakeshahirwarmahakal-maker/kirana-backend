@@ -16,13 +16,37 @@ module.exports = (pool) => {
     }
   };
 
-  // Get all products with filters
+  // ✅ Helper function (IMPORTANT)
+  const parseImages = (images) => {
+    let arr = [];
+    try {
+      if (typeof images === "string") {
+        arr = JSON.parse(images);
+      } else if (Array.isArray(images)) {
+        arr = images;
+      }
+    } catch (e) {
+      arr = [];
+    }
+    return arr;
+  };
+
+  // ================================
+  // ✅ Get all products
+  // ================================
   router.get('/', async (req, res) => {
     try {
       const { category_id, search, min_price, max_price, seller_id, sort } = req.query;
       const conn = await pool.getConnection();
 
-      let query = 'SELECT p.*, s.shop_name, COALESCE(c.name, "Uncategorized") as category FROM products p JOIN sellers s ON p.seller_id = s.id LEFT JOIN categories c ON p.category_id = c.id WHERE 1=1';
+      let query = `
+        SELECT p.*, s.shop_name, 
+        COALESCE(c.name, "Uncategorized") as category 
+        FROM products p 
+        JOIN sellers s ON p.seller_id = s.id 
+        LEFT JOIN categories c ON p.category_id = c.id 
+        WHERE 1=1
+      `;
       const params = [];
 
       if (category_id) {
@@ -52,28 +76,39 @@ module.exports = (pool) => {
       else query += ' ORDER BY p.created_at DESC';
 
       const [products] = await conn.execute(query, params);
-      
-      // Parse images JSON and add image property (first image in array)
-      const formattedProducts = products.map(p => ({
-        ...p,
-        image: p.images ? (JSON.parse(p.images)[0] || null) : null,
-        images: p.images ? JSON.parse(p.images) : []
-      }));
-      
-      conn.release();
 
+      const formattedProducts = products.map(p => {
+        const imagesArray = parseImages(p.images);
+
+        return {
+          ...p,
+          image: imagesArray[0] || null,
+          images: imagesArray
+        };
+      });
+
+      conn.release();
       res.json(formattedProducts);
+
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  // Get product by ID
+  // ================================
+  // ✅ Get product by ID
+  // ================================
   router.get('/:id', async (req, res) => {
     try {
       const conn = await pool.getConnection();
+
       const [products] = await conn.execute(
-        'SELECT p.*, s.shop_name, COALESCE(c.name, "Uncategorized") as category FROM products p JOIN sellers s ON p.seller_id = s.id LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?',
+        `SELECT p.*, s.shop_name, 
+         COALESCE(c.name, "Uncategorized") as category 
+         FROM products p 
+         JOIN sellers s ON p.seller_id = s.id 
+         LEFT JOIN categories c ON p.category_id = c.id 
+         WHERE p.id = ?`,
         [req.params.id]
       );
 
@@ -83,20 +118,25 @@ module.exports = (pool) => {
       }
 
       const product = products[0];
+      const imagesArray = parseImages(product.images);
+
       const formattedProduct = {
         ...product,
-        image: product.images ? (JSON.parse(product.images)[0] || null) : null,
-        images: product.images ? JSON.parse(product.images) : []
+        image: imagesArray[0] || null,
+        images: imagesArray
       };
-      
-      res.json(formattedProduct);
+
       conn.release();
+      res.json(formattedProduct);
+
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  // Get categories
+  // ================================
+  // ✅ Get categories
+  // ================================
   router.get('/categories/all', async (req, res) => {
     try {
       const conn = await pool.getConnection();
@@ -108,11 +148,15 @@ module.exports = (pool) => {
     }
   });
 
-  // Get latest product update timestamp for real-time checks
+  // ================================
+  // ✅ Last updated
+  // ================================
   router.get('/last-updated', async (req, res) => {
     try {
       const conn = await pool.getConnection();
-      const [result] = await conn.execute('SELECT MAX(updated_at) as last_updated FROM products WHERE is_active = 1');
+      const [result] = await conn.execute(
+        'SELECT MAX(updated_at) as last_updated FROM products WHERE is_active = 1'
+      );
       conn.release();
       res.json({ last_updated: result[0].last_updated });
     } catch (error) {
